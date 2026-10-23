@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e9f6e">
+<meta name="description" content="上传支付截图自动记账，支持微信/支付宝/中国银行，收支可视化统计">
+<title>智能记账</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js" defer></script>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══════════ 记账页 ═══════════ -->
+  <section class="view active" id="view-record">
+    <div class="page-head">
+      <h1>智能记账</h1>
+      <p class="sub" id="today-line"></p>
+    </div>
+
+    <div class="card month-mini">
+      <div class="mm-item"><span class="mm-label">本月支出</span><span class="mm-val expense" id="mm-expense">¥0</span></div>
+      <div class="mm-sep"></div>
+      <div class="mm-item"><span class="mm-label">本月收入</span><span class="mm-val income" id="mm-income">¥0</span></div>
+      <div class="mm-sep"></div>
+      <div class="mm-item"><span class="mm-label">本月结余</span><span class="mm-val" id="mm-balance">¥0</span></div>
+    </div>
+
+    <div class="upload-card" id="upload-card" role="button" tabindex="0">
+      <div class="upload-glow"></div>
+      <div class="upload-icon">📷</div>
+      <div class="upload-title">上传支付截图，自动记账</div>
+      <div class="upload-sub">支持 微信支付 · 支付宝 · 中国银行动账通知</div>
+      <div class="upload-badge" id="upload-badge">本地识别 · 免费离线</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-light grow" id="btn-camera">📸 拍一张</button>
+      <button class="btn btn-light grow" id="btn-manual">✏️ 手动记一笔</button>
+    </div>
+    <input type="file" id="file-input" accept="image/*" multiple hidden>
+    <input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
+
+    <div class="card hidden" id="ocr-status">
+      <div class="ocr-thumb"><img id="ocr-thumb-img" alt="截图预览"></div>
+      <div class="ocr-info">
+        <div class="ocr-title" id="ocr-status-title">正在识别…</div>
+        <div class="ocr-sub" id="ocr-status-sub">第 1/1 张</div>
+        <div class="progress"><div class="progress-bar" id="ocr-progress" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <h2 class="sec-title">最近记录 <button class="link-btn" data-goto="list">全部 ›</button></h2>
+    <div id="recent-list"></div>
+  </section>
+
+  <!-- ═══════════ 明细页 ═══════════ -->
+  <section class="view" id="view-list">
+    <div class="page-head row">
+      <h1>明细</h1>
+      <div class="month-nav">
+        <button id="list-prev" class="mn-btn" aria-label="上个月">‹</button>
+        <span id="list-month" class="mn-label"></span>
+        <button id="list-next" class="mn-btn" aria-label="下个月">›</button>
+      </div>
+    </div>
+    <div class="filter-chips" id="list-filter">
+      <button class="chip active" data-f="all">全部</button>
+      <button class="chip" data-f="expense">支出</button>
+      <button class="chip" data-f="income">收入</button>
+    </div>
+    <div class="card list-summary" id="list-summary"></div>
+    <div id="record-list"></div>
+    <div class="empty hidden" id="list-empty">
+      <div class="empty-icon">🧾</div>
+      <p>本月还没有记录</p>
+      <button class="btn btn-primary" data-goto="record">去记一笔</button>
+    </div>
+  </section>
+
+  <!-- ═══════════ 统计页 ═══════════ -->
+  <section class="view" id="view-stats">
+    <div class="page-head"><h1>统计</h1></div>
+    <div class="stat-cards">
+      <div class="stat-card"><span class="sc-label">今日支出</span><span class="sc-val expense" id="sc-today-exp">¥0</span><span class="sc-sub income" id="sc-today-inc">收 ¥0</span></div>
+      <div class="stat-card"><span class="sc-label">本周支出</span><span class="sc-val expense" id="sc-week-exp">¥0</span><span class="sc-sub income" id="sc-week-inc">收 ¥0</span></div>
+      <div class="stat-card"><span class="sc-label">本月支出</span><span class="sc-val expense" id="sc-month-exp">¥0</span><span class="sc-sub income" id="sc-month-inc">收 ¥0</span></div>
+    </div>
+
+    <div class="seg" id="stats-dim">
+      <button class="seg-btn active" data-d="day">按日</button>
+      <button class="seg-btn" data-d="week">按周</button>
+      <button class="seg-btn" data-d="month">按月</button>
+    </div>
+
+    <div class="card chart-card">
+      <h3 class="cc-title">收支对比 <span class="cc-sub" id="bar-sub">近 14 天</span></h3>
+      <div id="chart-bar" class="chart"></div>
+    </div>
+    <div class="card chart-card">
+      <h3 class="cc-title">本月支出构成</h3>
+      <div id="chart-donut" class="chart"></div>
+      <div class="empty mini hidden" id="donut-empty">本月暂无支出</div>
+    </div>
+    <div class="card chart-card">
+      <h3 class="cc-title">结余趋势</h3>
+      <div id="chart-line" class="chart"></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 设置页 ═══════════ -->
+  <section class="view" id="view-settings">
+    <div class="page-head"><h1>设置</h1></div>
+
+    <div class="card">
+      <h3 class="card-title">🖼️ 截图识别方式</h3>
+      <label class="radio-row"><input type="radio" name="ocr-mode" value="local"><div><b>本地识别</b><span>免费 · 离线可用 · 首次需下载约 4MB 模型</span></div></label>
+      <label class="radio-row"><input type="radio" name="ocr-mode" value="ai"><div><b>AI 识别（更准，推荐）</b><span>自动判断分类 · 需免费 API Key + 代理（设置里有教程）</span></div></label>
+      <div id="ai-config" class="collapse">
+        <div class="ai-key-row">
+          <input id="ai-key" type="password" placeholder="粘贴智谱 API Key" autocomplete="off">
+          <button class="btn btn-light" id="btn-test-ai">测试</button>
+        </div>
+        <input id="ai-base" class="ai-base-input" type="url" placeholder="代理地址（可选）：如 https://xxx.workers.dev/api/paas/v4" autocomplete="off">
+        <p class="hint">获取方法：打开 <a href="https://bigmodel.cn" target="_blank" rel="noopener">bigmodel.cn</a> 注册 → 控制台「API Keys」→ 创建并复制。glm-4v-flash 模型免费，Key 只保存在本机浏览器。</p>
+        <p class="hint">⚠️ 智谱官方接口不允许浏览器直连：使用 AI 识别需先免费部署一个 Cloudflare Worker 转发（约 3 分钟，代码见 README），并把 Worker 地址填到上方"代理地址"。</p>
+        <p class="hint ok hidden" id="ai-test-ok">✓ 连接成功</p>
+        <p class="hint err hidden" id="ai-test-err"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">💾 数据备份</h3>
+      <p class="hint" id="data-stat"></p>
+      <div class="btn-row">
+        <button class="btn btn-primary grow" id="btn-export">⬇️ 导出备份</button>
+        <button class="btn btn-light grow" id="btn-import">⬆️ 导入恢复</button>
+      </div>
+      <input type="file" id="import-input" accept=".json,application/json" hidden>
+      <p class="hint">数据仅保存在当前浏览器，清缓存 / 换手机前请先导出。</p>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">⚠️ 危险操作</h3>
+      <button class="btn btn-danger" id="btn-clear">清空全部数据</button>
+    </div>
+
+    <div class="card">
+      <h3 class="card-title">❓ 使用说明</h3>
+      <details class="faq"><summary>如何自动记账？</summary><p>打开微信/支付宝的「账单详情」页、或中国银行 App 的「动账通知」页截图，回到本站上传即可。中英文界面都支持。识别结果会先让你确认，改错了字段可以直接修改。</p></details>
+      <details class="faq"><summary>识别不准怎么办？</summary><p>本地识别对金额数字准确率较高，个别中文可能出错，保存前确认即可。追求准确可在上方切换 AI 识别（免费）。</p></details>
+      <details class="faq"><summary>数据存在哪里？安全吗？</summary><p>全部数据只存在你手机浏览器的本地存储里，不上传任何服务器，截图识别后也不会保存图片。缺点是清缓存会丢失，请定期导出备份。</p></details>
+      <details class="faq"><summary>添加到手机桌面</summary><p>iPhone：Safari 分享 → 添加到主屏幕。Android：浏览器菜单 → 安装应用 / 添加到主屏幕，即可像 App 一样全屏使用。</p></details>
+    </div>
+
+    <p class="foot-note">智能记账 · 纯本地运行 · v1.0</p>
+  </section>
+
+  <!-- ═══════════ 底部导航 ═══════════ -->
+  <nav class="tabbar">
+    <button class="tab active" data-view="record"><span class="tab-icon">📷</span><span>记账</span></button>
+    <button class="tab" data-view="list"><span class="tab-icon">🧾</span><span>明细</span></button>
+    <button class="tab" data-view="stats"><span class="tab-icon">📊</span><span>统计</span></button>
+    <button class="tab" data-view="settings"><span class="tab-icon">⚙️</span><span>设置</span></button>
+  </nav>
+</div>
+
+<!-- ═══════════ 记录编辑/确认弹窗 ═══════════ -->
+<div class="modal-mask hidden" id="modal-record">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="rm-title">记一笔</h3>
+      <button class="icon-btn" id="rm-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="modal-scroll">
+      <div class="rm-queue hidden" id="rm-queue"></div>
+      <div class="dupwarn hidden" id="rm-dupwarn"></div>
+      <div class="rm-thumb hidden" id="rm-thumb"><img id="rm-thumb-img" alt="截图预览（不保存）"></div>
+      <div class="type-toggle" id="rm-type">
+        <button class="tt active" data-t="expense">支出</button>
+        <button class="tt" data-t="income">收入</button>
+      </div>
+      <div class="amount-box"><span class="ab-symbol">¥</span><input id="rm-amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></div>
+      <div class="cat-chips" id="rm-cats"></div>
+      <label class="f-row">名称<input id="rm-merchant" placeholder="商户 / 对方"></label>
+      <div class="f-grid">
+        <label class="f-row">日期<input type="date" id="rm-date"></label>
+        <label class="f-row">时间<input type="time" id="rm-time"></label>
+      </div>
+      <div class="f-grid">
+        <label class="f-row">来源
+          <select id="rm-source">
+            <option value="manual">手动</option>
+            <option value="wechat">微信支付</option>
+            <option value="alipay">支付宝</option>
+            <option value="boc">中国银行</option>
+          </select>
+        </label>
+        <label class="f-row">备注<input id="rm-note" placeholder="选填"></label>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger hidden" id="rm-delete">删除</button>
+      <span class="grow"></span>
+      <button class="btn btn-light" id="rm-skip">跳过</button>
+      <button class="btn btn-primary" id="rm-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 通用确认弹窗 ═══════════ -->
+<div class="modal-mask hidden" id="modal-confirm">
+  <div class="modal small">
+    <h3 class="modal-head-solo" id="cf-title">确认</h3>
+    <p class="cf-text" id="cf-text"></p>
+    <div class="modal-actions">
+      <span class="grow"></span>
+      <button class="btn btn-light" id="cf-cancel">取消</button>
+      <button class="btn btn-primary" id="cf-ok">确定</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<script src="js/categories.js"></script>
+<script src="js/store.js"></script>
+<script src="js/parser.js"></script>
+<script src="js/ocr.js"></script>
+<script src="js/aiocr.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
