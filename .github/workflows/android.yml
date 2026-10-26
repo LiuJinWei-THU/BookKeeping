@@ -6,6 +6,9 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -24,18 +27,33 @@ jobs:
           gradle-version: '8.7'
 
       - name: Unit tests (通知解析器)
-        run: gradle test --no-daemon --stacktrace
-        working-directory: android
+        run: |
+          set -o pipefail
+          gradle test --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle-test.log"
 
       - name: Build release APK
-        run: gradle assembleRelease --no-daemon --stacktrace
-        working-directory: android
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle-build.log"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: smart-ledger-apk
           path: android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Publish failure logs to ci-logs branch
+        if: failure()
+        run: |
+          git config user.name "ci-log-bot"
+          git config user.email "actions@github.com"
+          git checkout --orphan ci-logs
+          git rm -rf --quiet . || true
+          cp "$RUNNER_TEMP"/gradle-*.log .
+          ls -la
+          git add -A
+          git commit -m "CI failure logs $(date -u +%FT%TZ)"
+          git push origin ci-logs --force
 
       - name: Create Release with APK
         if: startsWith(github.ref, 'refs/tags/')
