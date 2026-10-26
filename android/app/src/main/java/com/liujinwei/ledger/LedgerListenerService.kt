@@ -20,6 +20,14 @@ class LedgerListenerService : NotificationListenerService() {
         var text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
         val big = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
         if (!big.isNullOrBlank() && big.length > text.length) text = big
+        // 聚合服务号通知（Service Accounts）可能用 MessagingStyle，正文在各条消息里
+        @Suppress("DEPRECATION", "UNCHECKED_CAST")
+        val msgs = extras.getParcelableArrayList<android.os.Parcelable>(Notification.EXTRA_MESSAGES)
+        if (msgs != null) {
+            val msgText = msgs.filterIsInstance<Notification.MessagingStyle.Message>()
+                .joinToString("\n") { it.text?.toString() ?: "" }
+            if (msgText.length > text.length) text = msgText
+        }
         if (title.isBlank() && text.isBlank()) return
 
         val source = when (pkg) {
@@ -30,9 +38,9 @@ class LedgerListenerService : NotificationListenerService() {
 
         val bill = NotifParser.parse(pkg, title, text, sbn.postTime)
         if (bill == null) {
-            // 有支付字样但解不出金额 → 记"未识别"便于排查；普通聊天/营销推送静默忽略
+            // 有支付字样但解不出金额 → 记"未识别"（附通知原文片段，便于定位新格式）；普通聊天/营销推送静默忽略
             val hinted = listOf("支付", "付款", "收款", "消费", "动账", "退款").any { (title + text).contains(it) }
-            if (hinted) Db.log(this, "parse_fail", title, null, null, null, source)
+            if (hinted) Db.log(this, "parse_fail", title + "｜" + text.take(60), null, null, null, source)
             return
         }
 

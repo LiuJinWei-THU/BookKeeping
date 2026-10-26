@@ -113,7 +113,7 @@ object Db {
         val db = h(ctx).writableDatabase
         db.execSQL(
             "INSERT INTO capture_log (at, action, title, amount, type, merchant, source) VALUES (?,?,?,?,?,?,?)",
-            arrayOf<Any?>(System.currentTimeMillis(), action, title.take(40), amount, type, merchant?.take(40), source)
+            arrayOf<Any?>(System.currentTimeMillis(), action, title.take(80), amount, type, merchant?.take(40), source)
         )
         db.execSQL("DELETE FROM capture_log WHERE at NOT IN (SELECT at FROM capture_log ORDER BY at DESC LIMIT 50)")
     }

@@ -112,6 +112,43 @@ class NotifParserTest {
     }
 
     @Test
+    fun `服务号聚合通知_ServiceAccounts标题_官方名在正文`() {
+        // 真机反馈：微信把服务号消息合入「Service Accounts」聚合通知，标题不含官方名
+        val b = wechat("Service Accounts", "微信支付：已支付¥12.50")
+        assertNotNull(b)
+        assertEquals("expense", b!!.type)
+        assertEquals(12.50, b.amount, 1e-9)
+        assertEquals("wechat", b.source)
+    }
+
+    @Test
+    fun `服务号聚合通知_退款`() {
+        val b = wechat("Service Accounts", "微信支付：你收到一笔退款45.00元")
+        assertNotNull(b)
+        assertEquals("income", b!!.type)
+        assertEquals(45.00, b.amount, 1e-9)
+    }
+
+    @Test
+    fun `服务号聚合通知_整数金额`() {
+        val b = wechat("Service Accounts", "微信支付：收款3元")
+        assertNotNull(b)
+        assertEquals("income", b!!.type)
+        assertEquals(3.0, b.amount, 1e-9)
+    }
+
+    @Test
+    fun `服务号聚合通知_无金额不记录`() {
+        assertNull(wechat("Service Accounts", "微信支付：您有一条新的服务通知，点击查看"))
+    }
+
+    @Test
+    fun `好友模仿官方口吻仍被过滤`() {
+        assertNull(wechat("李四", "微信支付了100.00元给你，查收"))
+        assertNull(wechat("王五", "已支付99.90元给我，谢谢"))
+    }
+
+    @Test
     fun `官方通知无金额不记录`() {
         assertNull(wechat("微信支付", "点击查看账单详情"))
     }

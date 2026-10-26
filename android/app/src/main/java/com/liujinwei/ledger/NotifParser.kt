@@ -16,11 +16,36 @@ object NotifParser {
         "支付", "付款", "收款", "消费", "到账", "动账", "退款", "收入", "转出", "转入", "扣款", "已收钱", "账单"
     )
 
-    /** 微信通知必须来自官方服务号（标题含以下字样），避免把好友聊天里的"我支付了xx"记成账单 */
-    private val WECHAT_OFFICIAL = listOf("微信支付", "微信收款", "收款助手", "财付通", "WeChat Pay")
+    /** 微信通知的官方名（标题命中，或正文以「微信支付：」等明确官方格式开头） */
+    private val WECHAT_BRAND = listOf("微信支付", "微信收款", "收款助手", "财付通", "WeChat Pay")
 
-    /** 支付宝官方通知标题特征 */
-    private val ALIPAY_OFFICIAL = listOf("支付宝", "支付", "收款", "账单", "花呗", "余额宝", "Alipay")
+    /** 聚合服务号正文开头的官方格式：官方名后必须跟冒号/空白（"微信支付了xx"这种好友口吻不算） */
+    private val WECHAT_TEXT_ANCHOR =
+        Regex("""^\s*(?:【(?:微信支付|微信收款|收款助手|财付通)】|(?:微信支付|微信收款|收款助手|财付通|WeChat\s*Pay)\s*[:\s])""", RegexOption.IGNORE_CASE)
+
+    /** 官方通知里必然出现的资金动作词，与开头格式双保险 */
+    private val WECHAT_STATUS = Regex("""支付|付款|收款|扣款|退款|到账|零钱""")
+
+    /** 支付宝官方通知特征（标题命中，或正文以官方句式开头） */
+    private val ALIPAY_TITLE = listOf("支付宝", "支付", "收款", "账单", "花呗", "余额宝", "Alipay")
+    private val ALIPAY_BRAND = listOf("支付宝", "Alipay")
+    private val ALIPAY_TEXT_ANCHOR = Regex("""^\s*(支付宝|你有一笔|支付成功|付款成功|收款到账|收款成功|已到账|转账到账|花呗|余额宝)""", RegexOption.IGNORE_CASE)
+
+    /**
+     * 是否官方付款通知。微信会把服务号消息（含「微信支付」）合入「服务号 / Service Accounts」
+     * 聚合通知——此时标题不是官方名、正文以「微信支付：…」开头，因此标题与正文开头都要检查；
+     * 正文路径要求官方名+分隔符+资金动作词，避免好友发"微信支付了100元""已支付99元"这类消息被误记。
+     */
+    private fun isOfficial(source: String, titleNorm: String, textNorm: String): Boolean = when (source) {
+        "wechat" ->
+            WECHAT_BRAND.any { titleNorm.contains(it, ignoreCase = true) }
+                || (WECHAT_TEXT_ANCHOR.containsMatchIn(textNorm) && WECHAT_STATUS.containsMatchIn(textNorm))
+        "alipay" ->
+            ALIPAY_TITLE.any { titleNorm.contains(it, ignoreCase = true) }
+                || ALIPAY_BRAND.any { textNorm.contains(it, ignoreCase = true) }
+                || ALIPAY_TEXT_ANCHOR.containsMatchIn(textNorm)
+        else -> true
+    }
 
     fun isWatched(pkg: String?): Boolean {
         if (pkg.isNullOrEmpty()) return false
@@ -35,6 +60,7 @@ object NotifParser {
     fun parse(pkg: String?, title: String?, text: String?, postTime: Long, now: Long = System.currentTimeMillis()): Bill? {
         if (!isWatched(pkg)) return null
         val titleNorm = normalize(title ?: "")
+        val textNorm = normalize(text ?: "")
         val body = normalize((title ?: "") + "\n" + (text ?: ""))
         if (body.isBlank()) return null
 
@@ -44,11 +70,7 @@ object NotifParser {
             else -> "boc"
         }
 
-        // 只认官方服务号/官方通知，过滤聊天消息与营销推送
-        when (source) {
-            "wechat" -> if (WECHAT_OFFICIAL.none { titleNorm.contains(it, ignoreCase = true) }) return null
-            "alipay" -> if (ALIPAY_OFFICIAL.none { titleNorm.contains(it, ignoreCase = true) }) return null
-        }
+        if (!isOfficial(source, titleNorm, textNorm)) return null
 
         if (PAY_HINT.none { body.contains(it) }) return null
         val amount = findAmount(body) ?: return null
@@ -81,8 +103,10 @@ object NotifParser {
         }
     }.replace("￥", "¥")
 
-    /* ── 金额：要求带 ¥ 或 "元"，避免把版本号/日期当金额；同分取先出现的 ── */
+    /* ── 金额：优先带 ¥ 或 "元" 的小数写法；无小数时接受 "3元" 整数写法；
+          避免把版本号/日期当金额；同分取先出现的 ── */
     private val AMT_RE = Regex("""[¥￥]?\s*([0-9][0-9,]{0,9})\s*[.．]\s*([0-9]{1,2})\s*(元)?""")
+    private val AMT_INT_RE = Regex("""(?<![.\d])([0-9][0-9,]{0,5})\s*元""")
 
     fun findAmount(t: String): Double? {
         var bestV = 0.0
@@ -94,8 +118,14 @@ object NotifParser {
             if (score < 2) continue // 必须带货币符或"元"
             if (score > bestScore) { bestScore = score; bestV = v }
         }
-        if (bestScore < 0) return null
-        return Math.round(bestV * 100) / 100.0
+        if (bestScore >= 2) return Math.round(bestV * 100) / 100.0
+        // 整数金额兜底："收款3元"（未被上游官方/关键词过滤放行的营销文案走不到这里）
+        for (m in AMT_INT_RE.findAll(t)) {
+            val v = m.groupValues[1].replace(",", "").toDoubleOrNull() ?: continue
+            if (v < 0.01 || v > 100_000) continue
+            return v
+        }
+        return null
     }
 
     /* ── 收支方向：先剥掉标题里的官方名（"支付宝通知""微信支付"自带"支付"字样）再统计；

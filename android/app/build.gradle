@@ -11,8 +11,8 @@ android {
         applicationId "com.liujinwei.ledger"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "1.1.0"
+        versionCode 2
+        versionName "1.1.1"
     }
 
     // 自签名密钥（个人侧载用途，随仓库分发以保证升级安装时签名一致）
