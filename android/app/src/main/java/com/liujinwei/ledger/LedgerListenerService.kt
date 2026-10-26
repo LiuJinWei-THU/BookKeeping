@@ -39,7 +39,10 @@ class LedgerListenerService : NotificationListenerService() {
         val bill = NotifParser.parse(pkg, title, text, sbn.postTime)
         if (bill == null) {
             // 有支付字样但解不出金额 → 记"未识别"（附通知原文片段，便于定位新格式）；普通聊天/营销推送静默忽略
-            val hinted = listOf("支付", "付款", "收款", "消费", "动账", "退款").any { (title + text).contains(it) }
+            val hinted = listOf(
+                "支付", "付款", "收款", "消费", "动账", "退款",
+                "paid", "payment", "refund", "receiv", "transaction", "debit", "credit"
+            ).any { (title + text).lowercase().contains(it) }
             if (hinted) Db.log(this, "parse_fail", title + "｜" + text.take(60), null, null, null, source)
             return
         }

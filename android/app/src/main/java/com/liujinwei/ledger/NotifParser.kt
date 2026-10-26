@@ -12,8 +12,10 @@ object NotifParser {
     /** 银行动账 App 包名（目前支持中国银行）；加新银行时在此追加 */
     val BANK_PKGS = listOf("com.chinamworld.main", "com.chinamworld.bocmbci")
 
+    /** 支付特征词（中英文，小写匹配）：命中任一才继续解析 */
     private val PAY_HINT = listOf(
-        "支付", "付款", "收款", "消费", "到账", "动账", "退款", "收入", "转出", "转入", "扣款", "已收钱", "账单"
+        "支付", "付款", "收款", "消费", "到账", "动账", "退款", "收入", "转出", "转入", "扣款", "已收钱", "账单",
+        "paid", "payment", "refund", "receiv", "transfer", "transaction", "purchase", "debit", "credit", "spent"
     )
 
     /** 微信通知的官方名（标题命中，或正文以「微信支付：」等明确官方格式开头） */
@@ -23,13 +25,18 @@ object NotifParser {
     private val WECHAT_TEXT_ANCHOR =
         Regex("""^\s*(?:【(?:微信支付|微信收款|收款助手|财付通)】|(?:微信支付|微信收款|收款助手|财付通|WeChat\s*Pay)\s*[:\s])""", RegexOption.IGNORE_CASE)
 
-    /** 官方通知里必然出现的资金动作词，与开头格式双保险 */
-    private val WECHAT_STATUS = Regex("""支付|付款|收款|扣款|退款|到账|零钱""")
+    /** 官方通知里必然出现的资金动作词（中英文），与开头格式双保险 */
+    private val WECHAT_STATUS = Regex("""支付|付款|收款|扣款|退款|到账|零钱|paid|payment|refund|receiv|transfer|wallet""", RegexOption.IGNORE_CASE)
 
-    /** 支付宝官方通知特征（标题命中，或正文以官方句式开头） */
-    private val ALIPAY_TITLE = listOf("支付宝", "支付", "收款", "账单", "花呗", "余额宝", "Alipay")
-    private val ALIPAY_BRAND = listOf("支付宝", "Alipay")
-    private val ALIPAY_TEXT_ANCHOR = Regex("""^\s*(支付宝|你有一笔|支付成功|付款成功|收款到账|收款成功|已到账|转账到账|花呗|余额宝)""", RegexOption.IGNORE_CASE)
+    /** 支付宝官方通知特征（标题命中，或正文以官方句式开头，中英文） */
+    private val ALIPAY_TITLE = listOf(
+        "支付宝", "支付", "付款", "收款", "账单", "花呗", "余额宝", "alipay", "payment", "paid", "received", "refund", "transaction", "transfer"
+    )
+    private val ALIPAY_BRAND = listOf("支付宝", "alipay")
+    private val ALIPAY_TEXT_ANCHOR = Regex(
+        """^\s*(支付宝|你有一笔|支付成功|付款成功|收款到账|收款成功|已到账|转账到账|花呗|余额宝|alipay|you\s+(?:paid|received|have|got)|payment\s+|transaction\s+)""",
+        RegexOption.IGNORE_CASE
+    )
 
     /**
      * 是否官方付款通知。微信会把服务号消息（含「微信支付」）合入「服务号 / Service Accounts」
@@ -72,7 +79,8 @@ object NotifParser {
 
         if (!isOfficial(source, titleNorm, textNorm)) return null
 
-        if (PAY_HINT.none { body.contains(it) }) return null
+        val bodyLc = body.lowercase()
+        if (PAY_HINT.none { bodyLc.contains(it) }) return null
         val amount = findAmount(body) ?: return null
         val type = detectType(body)
         val merchant = findMerchant(body)
@@ -103,10 +111,11 @@ object NotifParser {
         }
     }.replace("￥", "¥")
 
-    /* ── 金额：优先带 ¥ 或 "元" 的小数写法；无小数时接受 "3元" 整数写法；
+    /* ── 金额：优先带 ¥/$ 或 "元"/货币代码(CNY 68.10)的小数写法；无小数时接受 "3元" 整数写法；
           避免把版本号/日期当金额；同分取先出现的 ── */
-    private val AMT_RE = Regex("""[¥￥]?\s*([0-9][0-9,]{0,9})\s*[.．]\s*([0-9]{1,2})\s*(元)?""")
+    private val AMT_RE = Regex("""(?i)(?:cny|rmb|usd|hkd|eur|gbp|jpy)?\s*[¥￥$]?\s*([0-9][0-9,]{0,9})\s*[.．]\s*([0-9]{1,2})\s*(元)?""")
     private val AMT_INT_RE = Regex("""(?<![.\d])([0-9][0-9,]{0,5})\s*元""")
+    private val CUR_CODE = Regex("""(?i)^(?:cny|rmb|usd|hkd|eur|gbp|jpy)""")
 
     fun findAmount(t: String): Double? {
         var bestV = 0.0
@@ -114,8 +123,13 @@ object NotifParser {
         for (m in AMT_RE.findAll(t)) {
             val v = (m.groupValues[1].replace(",", "") + "." + m.groupValues[2]).toDoubleOrNull() ?: continue
             if (v < 0.01 || v > 5_000_000) continue
-            val score = (if (m.value.contains("¥")) 3 else 0) + (if (m.groupValues[3] == "元") 2 else 0)
-            if (score < 2) continue // 必须带货币符或"元"
+            val score = when {
+                m.value.contains("¥") || m.value.contains("￥") || m.value.contains("$") -> 3
+                m.groupValues[3] == "元" -> 2
+                CUR_CODE.containsMatchIn(m.value) -> 2
+                else -> 0
+            }
+            if (score < 2) continue // 必须带货币符、"元"或货币代码
             if (score > bestScore) { bestScore = score; bestV = v }
         }
         if (bestScore >= 2) return Math.round(bestV * 100) / 100.0
@@ -132,44 +146,51 @@ object NotifParser {
           同分时收入词优先（微信收款助手文案里常含"消费"） ── */
     private val INC_WORDS = listOf("收款", "已收钱", "到账", "收入", "转入", "退款", "退回", "返还", "红包")
     private val EXP_WORDS = listOf("支付", "付款", "消费", "支出", "转出", "扣款")
+    private val INC_WORDS_EN = listOf("received", "refund", "credited", "income")
+    private val EXP_WORDS_EN = listOf("paid", "payment", "spent", "purchase", "debited", "charged")
 
     fun detectType(t: String): String {
         val s = t.replace("支付宝", "")
             .replace("微信支付", "")
             .replace("Alipay", "", ignoreCase = true)
             .replace("WeChat Pay", "", ignoreCase = true)
-        val inc = INC_WORDS.count { s.contains(it) }
-        val exp = EXP_WORDS.count { s.contains(it) }
+            .lowercase()
+        val inc = INC_WORDS.count { s.contains(it) } + INC_WORDS_EN.count { s.contains(it) }
+        val exp = EXP_WORDS.count { s.contains(it) } + EXP_WORDS_EN.count { s.contains(it) }
+        val hasIncomeWord = (INC_WORDS + INC_WORDS_EN).any { s.contains(it) }
         return when {
             inc > exp -> "income"
             exp > inc -> "expense"
-            INC_WORDS.any { s.contains(it) } -> "income"
+            hasIncomeWord -> "income"
             else -> "expense"
         }
     }
 
-    /* ── 商户/对方：通知大多不带商户名，尽量从固定句式里提取 ── */
+    /* ── 商户/对方：通知大多不带商户名，尽量从固定句式里提取（中英文） ── */
     private val MERCHANT_RES = listOf(
         Regex("""(?:在|于)([^\s,，。;；:：]{2,20})(?:消费|支付|付款|购物)"""),
         Regex("""(?:付款给|转给|付给|付至)([^\s,，。;；:：]{2,20})"""),
         Regex("""元[（(]([^（）()]{2,24})[）)]"""),
         Regex("""(?:对方账户|对方名称|对方)[:：]\s*([^\s,，。;；]{2,24})"""),
-        Regex("""(?:商户|店铺|收款方)(?:名称)?[:：]\s*([^\s,，。;；]{2,24})""")
+        Regex("""(?:商户|店铺|收款方)(?:名称)?[:：]\s*([^\s,，。;；]{2,24})"""),
+        Regex("""(?i)(?:paid|payment)\s+to\s+([A-Za-z][\w&'.·-]*(?:\s+[A-Za-z][\w&'.·-]*){0,3})"""),
+        Regex("""(?i)\b(?:at|in|to|from)\s+([A-Z][\w&'.·-]*(?:\s+[A-Za-z][\w&'.·-]*){0,3})\b(?![\d:])""")
     )
 
     fun findMerchant(t: String): String {
         for (re in MERCHANT_RES) {
             val m = re.find(t) ?: continue
-            val v = m.groupValues.getOrNull(1) ?: continue
-            if (v.isNotEmpty()) return v.take(30)
+            val v = m.groupValues.getOrNull(1)?.trim() ?: continue
+            if (v.length >= 2) return v.take(30)
         }
         return ""
     }
 
-    /* ── 交易单号：通知里偶有（如动账短信带流水号） ── */
+    /* ── 交易单号：通知里偶有（如动账短信带流水号），中英文标签 ── */
+    private val TX_LABEL = Regex("""(?i)(?:交易单号|转账单号|交易号|订单号|流水号|transaction\s*id|transaction\s*number|order\s*(?:number|id)|reference\s*(?:no|number)?)\s*[:：]?\s*([0-9]{15,32})""")
+
     fun findTxId(t: String): String {
-        Regex("""(?:交易单号|转账单号|交易号|订单号|流水号)\s*[:：]?\s*([0-9]{15,32})""")
-            .find(t)?.groupValues?.get(1)?.let { return it }
+        TX_LABEL.find(t)?.groupValues?.get(1)?.let { return it }
         Regex("""\b(420[0-9]{16,26})\b""").find(t)?.groupValues?.get(1)?.let { return it }
         return ""
     }

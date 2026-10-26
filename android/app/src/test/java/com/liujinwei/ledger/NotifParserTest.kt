@@ -100,6 +100,76 @@ class NotifParserTest {
         assertTrue(b.merchant.contains("美团外卖"))
     }
 
+    /* ────────── 英文通知 ────────── */
+
+    @Test
+    fun `微信英文_支付`() {
+        val b = wechat("WeChat Pay", "You've successfully paid ¥12.50")
+        assertNotNull(b)
+        assertEquals("expense", b!!.type)
+        assertEquals(12.50, b.amount, 1e-9)
+    }
+
+    @Test
+    fun `微信英文_服务号聚合退款`() {
+        val b = wechat("Service Accounts", "WeChat Pay: You've received a refund of ¥45.00")
+        assertNotNull(b)
+        assertEquals("income", b!!.type)
+        assertEquals(45.00, b.amount, 1e-9)
+    }
+
+    @Test
+    fun `微信英文_收款`() {
+        val b = wechat("WeChat Pay", "Received ¥3.00")
+        assertNotNull(b)
+        assertEquals("income", b!!.type)
+        assertEquals(3.00, b.amount, 1e-9)
+    }
+
+    @Test
+    fun `支付宝英文_消费带商户`() {
+        val b = alipay(title = "Alipay", text = "You paid ¥12.50 at Starbucks")
+        assertNotNull(b)
+        assertEquals("expense", b!!.type)
+        assertEquals(12.50, b.amount, 1e-9)
+        assertTrue("商户名应含 Starbucks，实得：${b.merchant}", b.merchant.contains("Starbucks"))
+    }
+
+    @Test
+    fun `支付宝英文_收入`() {
+        val b = alipay(title = "Alipay Notifications", text = "You've received ¥58.00")
+        assertNotNull(b)
+        assertEquals("income", b!!.type)
+        assertEquals(58.00, b.amount, 1e-9)
+    }
+
+    @Test
+    fun `中行英文_支出_货币代码金额`() {
+        val pkg = NotifParser.BANK_PKGS.first()
+        val b = NotifParser.parse(
+            pkg, "Bank of China",
+            "Your account ending 1234 was debited CNY 68.10 on 26 Oct. Balance CNY 1000.00.",
+            t0
+        )
+        assertNotNull(b)
+        assertEquals("expense", b!!.type)
+        assertEquals(68.10, b.amount, 1e-9)
+    }
+
+    @Test
+    fun `中行英文_入账`() {
+        val pkg = NotifParser.BANK_PKGS.first()
+        val b = NotifParser.parse(pkg, "Bank of China", "Your account was credited CNY 500.00.", t0)
+        assertNotNull(b)
+        assertEquals("income", b!!.type)
+        assertEquals(500.00, b.amount, 1e-9)
+    }
+
+    @Test
+    fun `英文好友消息不误记`() {
+        assertNull(wechat("John", "Can you pay me 50.00 back tomorrow?"))
+    }
+
     @Test
     fun `好友聊天不记录`() {
         assertNull(wechat("张三", "今晚一起吃饭吗？"))
