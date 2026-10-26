@@ -98,14 +98,22 @@ object NotifParser {
         return Math.round(bestV * 100) / 100.0
     }
 
-    /* ── 收支方向：命中计数，同分时收款/退款字样优先（微信收款助手文案里常含"消费"） ── */
+    /* ── 收支方向：先剥掉标题里的官方名（"支付宝通知""微信支付"自带"支付"字样）再统计；
+          同分时收入词优先（微信收款助手文案里常含"消费"） ── */
+    private val INC_WORDS = listOf("收款", "已收钱", "到账", "收入", "转入", "退款", "退回", "返还", "红包")
+    private val EXP_WORDS = listOf("支付", "付款", "消费", "支出", "转出", "扣款")
+
     fun detectType(t: String): String {
-        val inc = listOf("收款", "已收钱", "到账", "收入", "转入", "退款", "退回", "返还", "红包").count { t.contains(it) }
-        val exp = listOf("支付", "付款", "消费", "支出", "转出", "扣款").count { t.contains(it) }
+        val s = t.replace("支付宝", "")
+            .replace("微信支付", "")
+            .replace("Alipay", "", ignoreCase = true)
+            .replace("WeChat Pay", "", ignoreCase = true)
+        val inc = INC_WORDS.count { s.contains(it) }
+        val exp = EXP_WORDS.count { s.contains(it) }
         return when {
             inc > exp -> "income"
             exp > inc -> "expense"
-            listOf("收款", "已收钱", "到账", "退款", "红包").any { t.contains(it) } -> "income"
+            INC_WORDS.any { s.contains(it) } -> "income"
             else -> "expense"
         }
     }
