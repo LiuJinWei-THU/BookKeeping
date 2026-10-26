@@ -27,11 +27,13 @@ jobs:
           gradle-version: '8.7'
 
       - name: Unit tests (通知解析器)
+        working-directory: android
         run: |
           set -o pipefail
           gradle test --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle-test.log"
 
       - name: Build release APK
+        working-directory: android
         run: |
           set -o pipefail
           gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle-build.log"
