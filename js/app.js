@@ -432,15 +432,39 @@
   }
 
   /* ═══════════ 设置页 ═══════════ */
+  const AB = window.AndroidStore || null; // 安卓 App 注入的通知记账桥
+  function renderAutoBill() {
+    if (!AB) return;
+    let enabled = false;
+    try { enabled = JSON.parse(AB.listenerEnabled() || '{}').enabled === true; } catch (_) { }
+    $('#ab-status').textContent = enabled
+      ? '✓ 通知监听已开启：付款后将自动记入账本'
+      : '⚠️ 尚未开启「通知使用权」，自动记账不生效。点下方按钮到系统设置 → 特殊应用权限 → 通知使用权 → 允许「智能记账」。';
+    $('#btn-listener').classList.toggle('hidden', enabled);
+    let items = [];
+    try { items = JSON.parse(AB.recentCaptures() || '{"items":[]}').items || []; } catch (_) { }
+    $('#ab-recent').innerHTML = items.length
+      ? '<h3 class="card-title" style="margin-top:12px">最近捕获</h3>' + items.map(it => {
+        const t = new Date(it.at);
+        const act = it.action === 'added' ? '<span class="ok">已记录</span>'
+          : it.action === 'dup' ? '<span>重复跳过</span>'
+            : it.action === 'ignored' ? '<span>与支付无关</span>' : '<span class="err">未识别</span>';
+        const amt = it.amount ? (it.type === 'income' ? '+' : '−') + fullMoney(it.amount) : '';
+        return `<div class="ab-item"><span class="ab-time">${p2(t.getMonth() + 1)}-${p2(t.getDate())} ${tstr(it.at)}</span><span class="ab-title">${esc(it.title || '')}</span><span class="ab-amt">${amt}</span>${act}</div>`;
+      }).join('')
+      : '';
+  }
   function renderSettings() {
     $$('input[name="ocr-mode"]').forEach(r => r.checked = r.value === settings.mode);
     $('#ai-key').value = settings.apiKey || '';
     $('#ai-base').value = settings.apiBase || '';
     $('#ai-config').classList.toggle('open', settings.mode === 'ai');
     const n = Store.all().length;
-    const size = Math.round((localStorage.getItem('ledger_records_v1') || '').length / 1024);
+    const size = Math.round(JSON.stringify(Store.all()).length / 1024);
     $('#data-stat').textContent = `当前共 ${n} 条记录，约占存储 ${size} KB`;
     $('#upload-badge').textContent = settings.mode === 'ai' ? 'AI 识别' : '本地识别 · 免费离线';
+    $('#card-autobill').classList.toggle('hidden', !AB);
+    if (AB) renderAutoBill();
   }
   $$('input[name="ocr-mode"]').forEach(r => r.onchange = () => {
     if (r.checked) {
@@ -473,11 +497,19 @@
   $('#btn-export').onclick = () => {
     const data = Store.exportJSON();
     if (!data.count) { toast('还没有可导出的记录'); return; }
+    const d = new Date();
+    const name = `智能记账备份_${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}.json`;
+    if (AB) { // App 内：写文件到手机"下载"目录
+      try {
+        const r = JSON.parse(AB.export(JSON.stringify(data, null, 2), name) || '{}');
+        toast(r.ok ? `已导出 ${data.count} 条 → ${r.path}` : ('导出失败：' + (r.msg || '')), 4000);
+      } catch (e) { toast('导出失败：' + (e.message || e), 3000); }
+      return;
+    }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
-    const d = new Date();
     a.href = URL.createObjectURL(blob);
-    a.download = `智能记账备份_${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}.json`;
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     toast(`已导出 ${data.count} 条记录`);
@@ -517,6 +549,12 @@
     refreshAll();
   };
 
+  // 通知自动记账按钮（仅 App 内可见）
+  if (AB) {
+    $('#btn-listener').onclick = () => AB.openListenerSettings();
+    $('#btn-ab-refresh').onclick = () => { renderSettings(); toast('已刷新'); };
+  }
+
   /* ═══════════ 刷新 ═══════════ */
   function refreshAll() {
     renderRecordPage();
@@ -524,6 +562,22 @@
     if (state.view === 'stats') { Charts.render(Store.all(), state.statsDim); renderStatCards(); }
     if (state.view === 'settings') renderSettings();
   }
+
+  /* ═══════════ 安卓 App 钩子（网页版不受影响） ═══════════ */
+  // 后台通知记账成功后由 App 调用：参数为 {ok,type,amount,merchant} 对象字面量
+  window.__onAutoBill = function (p) {
+    if (typeof p === 'string') { try { p = JSON.parse(p); } catch (_) { p = null; } }
+    Store._reload();
+    refreshAll();
+    if (p && p.ok) {
+      toast('✓ 已自动记账 ' + (p.type === 'income' ? '+' : '−') + fullMoney(p.amount) + (p.merchant ? ' ' + p.merchant : ''), 3400);
+    }
+  };
+  // App 回到前台时调用（例如从系统授权设置页返回）
+  window.__onResume = function () {
+    Store._reload();
+    refreshAll();
+  };
 
   /* ═══════════ 启动 ═══════════ */
   renderRecordPage();

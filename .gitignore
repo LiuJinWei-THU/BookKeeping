@@ -1,4 +1,11 @@
-# 测试截图含真实支付记录，不上传（防止隐私泄露）
-test/
+# 测试截图含真实支付记录，不上传（防止隐私泄露；仅根目录，不影响 android/app/src/test）
+/test/
 # 本地工具目录
 .zcode/
+# 安卓构建产物与本地配置（assets/web 由构建任务从根目录网页自动生成）
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/app/src/main/assets/web/

@@ -318,3 +318,16 @@ body {
   animation: toastIn .25s ease; line-height: 1.5;
 }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* ═══════════════ 通知自动记账（仅 App 内显示） ═══════════════ */
+.ab-recent .ab-item {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--text-2);
+  padding: 7px 0; border-bottom: 1px dashed var(--line);
+}
+.ab-recent .ab-item:last-child { border-bottom: none; }
+.ab-recent .ab-time { font-variant-numeric: tabular-nums; color: var(--text-3, var(--text-2)); flex-shrink: 0; }
+.ab-recent .ab-title { flex: 1; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ab-recent .ab-amt { font-weight: 700; font-variant-numeric: tabular-nums; }
+.ab-recent .ok { color: var(--primary); font-weight: 600; }
+.ab-recent .err { color: #e8590c; }

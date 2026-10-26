@@ -10,7 +10,7 @@
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="css/style.css">
-<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js" defer></script>
+<script src="vendor/echarts.min.js" defer onerror="this.remove();var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js';document.head.appendChild(s);"></script>
 </head>
 <body>
 <div id="app">
@@ -131,6 +131,17 @@
         <p class="hint ok hidden" id="ai-test-ok">✓ 连接成功</p>
         <p class="hint err hidden" id="ai-test-err"></p>
       </div>
+    </div>
+
+    <div class="card hidden" id="card-autobill">
+      <h3 class="card-title">🔔 通知自动记账</h3>
+      <p class="hint" id="ab-status">…</p>
+      <div class="btn-row">
+        <button class="btn btn-primary grow" id="btn-listener">去开启「通知使用权」</button>
+        <button class="btn btn-light" id="btn-ab-refresh">刷新状态</button>
+      </div>
+      <div id="ab-recent" class="ab-recent"></div>
+      <p class="hint">自动监听 微信支付 / 支付宝 / 银行App 的付款通知并记入账本。要求：①系统设置中授予本应用「通知使用权」；②锁屏通知设为「显示详细内容」；③为本应用关闭电池优化，防止被系统杀掉。</p>
     </div>
 
     <div class="card">

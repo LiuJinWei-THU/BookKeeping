@@ -1,0 +1,59 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.liujinwei.ledger'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.liujinwei.ledger"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.1.0"
+    }
+
+    // 自签名密钥（个人侧载用途，随仓库分发以保证升级安装时签名一致）
+    signingConfigs {
+        release {
+            storeFile rootProject.file('ledger.keystore')
+            storePassword 'ledger20260426'
+            keyAlias 'ledger'
+            keyPassword 'ledger20260426'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    // 全部使用 Android 框架自带能力（WebView / SQLite / org.json），零第三方运行时依赖
+    testImplementation 'junit:junit:4.13.2'
+    // JVM 单测中 org.json 在 android.jar 里是空桩，需引入真实实现
+    testImplementation 'org.json:json:20240303'
+}
+
+// 构建时把仓库根目录的网页复制进 assets：网页与 App 共用同一份代码，不产生副本分叉
+tasks.register('copyWeb', Copy) {
+    from(rootProject.projectDir.parentFile) {
+        include 'index.html', 'manifest.json', 'sw.js'
+        include 'css/**', 'js/**', 'icons/**', 'vendor/**'
+    }
+    into 'src/main/assets/web'
+}
+preBuild.dependsOn 'copyWeb'

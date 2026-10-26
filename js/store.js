@@ -1,8 +1,18 @@
-/* 数据层：localStorage 持久化、去重、导入导出 */
+/* 数据层：localStorage 持久化、去重、导入导出；安卓 App 内自动切换为 App 私有 SQLite（JS 桥） */
 window.Store = (function () {
   const KEY = 'ledger_records_v1';
+  // 安卓 App 的 WebView 在页面加载前注入 window.AndroidStore（addJavascriptInterface 同步桥）。
+  // 存在时数据读写委托给 App 的 SQLite；App 侧另有 pending 表暂存后台通知捕获的账单，
+  // AndroidStore.all() 每次会把 pending 合并进来，因此后台记账不会因页面缓存而丢失。
+  const BRIDGE = (typeof window !== 'undefined' && window.AndroidStore) ? window.AndroidStore : null;
 
   function load() {
+    if (BRIDGE) {
+      try {
+        const arr = JSON.parse(BRIDGE.all() || '[]');
+        return Array.isArray(arr) ? arr : [];
+      } catch (e) { console.error('读取 App 数据库失败', e); return []; }
+    }
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) return [];
@@ -12,6 +22,10 @@ window.Store = (function () {
   }
 
   function save(records) {
+    if (BRIDGE) {
+      try { return BRIDGE.save(JSON.stringify(records || [])) === true; }
+      catch (e) { console.error('写入 App 数据库失败', e); return false; }
+    }
     try {
       localStorage.setItem(KEY, JSON.stringify(records));
       return true;

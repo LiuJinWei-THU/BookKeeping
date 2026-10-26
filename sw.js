@@ -1,10 +1,11 @@
 /* Service Worker：本站静态资源离线缓存（CDN 资源走网络，由浏览器自行缓存） */
-const VERSION = 'ledger-v1.0.0';
+const VERSION = 'ledger-v1.1.0';
 const CORE = [
   './',
   './index.html',
   './manifest.json',
   './css/style.css',
+  './vendor/echarts.min.js',
   './js/categories.js',
   './js/store.js',
   './js/parser.js',
